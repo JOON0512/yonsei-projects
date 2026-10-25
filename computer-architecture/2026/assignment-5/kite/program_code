@@ -1,0 +1,54 @@
+############################################################
+# Kite: Architecture Simulator for RISC-V Instruction Set  #
+# Developed by William J. Song                             #
+# Computer Architecture and Systems Lab, Yonsei University #
+# Version: 1.13                                            #
+############################################################
+
+    addi    x20,    x0,     0
+LOOP_X:
+    bge     x20,    x13,    EXIT_X
+
+    addi    x21,    x0,     0
+LOOP_Y:
+    bge     x21,    x14,    EXIT_Y
+
+    mul     x25,    x20,    x14
+    add     x25,    x25,    x21
+    slli    x25,    x25,    3
+    add     x25,    x12,    x25
+    ld      x28,    0(x25)
+    
+    addi    x22,    x0,     0
+LOOP_Z:
+    bge     x22,    x15,    EXIT_Z
+
+    mul     x23,    x20,    x15
+    add     x23,    x23,    x22
+    slli    x23,    x23,    3
+    add     x23,    x10,    x23
+    ld      x26,    0(x23)
+    
+    mul     x24,    x22,    x14
+    add     x24,    x24,    x21
+    slli    x24,    x24,    3
+    add     x24,    x11,    x24
+    ld      x27,    0(x24)
+    
+    mul     x29,    x26,    x27
+    add     x28,    x28,    x29
+    
+    addi    x22,    x22,    1
+    jal     x0,     LOOP_Z
+
+EXIT_Z:
+    sd      x28,    0(x25)
+    addi    x21,    x21,    1
+    jal     x0,     LOOP_Y
+
+EXIT_Y:
+    addi    x20,    x20,    1
+    jal     x0,     LOOP_X
+
+EXIT_X:
+

@@ -1,0 +1,97 @@
+############################################################
+# Kite: Architecture Simulator for RISC-V Instruction Set  #
+# Developed by William J. Song                             #
+# Computer Architecture and Systems Lab, Yonsei University #
+# Version: 1.13                                            #
+############################################################
+
+# Kite program code
+#   1. The first instruction starts at PC = 4. PC = 0 is reserved as invalid.
+#   2. To terminate the program, let the next PC naturally go out of range.
+#   3. All the instructions and labels are case-insensitive.
+#   4. The program code supports only the following list of instructions
+#      (sorted by alphabetical order in each type).
+#      R-type: add, and, div, divu, mul, or, rem, remu, sll, sra, srl, sub, xor
+#      I-type: addi, andi, jalr, ld, slli, srai, srli, ori, xori
+#      S-type: sd
+#      SB-type: beq, bge, blt, bne
+#      U-type: lui
+#      UJ-type: jal
+#      No-type: nop
+
+#################################
+# Assignment 1: RISC-V Assembly #
+#################################
+
+MMA_WS:
+        # 1. Initialize k loop (Outer loop)
+        add x5, x0, x0       # x5 = k = 0
+
+loop_k:
+        beq x5, x15, end_k   # If k == K (x15), terminate all calculations
+
+        # 2. Initialize j loop (Middle loop)
+        add x6, x0, x0       # x6 = j = 0
+
+loop_j:
+        beq x6, x14, end_j   # If j == N (x14), terminate j loop
+
+        # ----------------------------------------------------
+        # [Load Weight] Read B[k][j] and fix it in a register (WS dataflow)
+        # Index formula for B: (k * N + j) * 8
+        # ----------------------------------------------------
+        mul x17, x5, x14     # x17 = k * N
+        add x17, x17, x6     # x17 = k * N + j
+        slli x17, x17, 3     # x17 = (k * N + j) * 8 (8-byte offset)
+        add x17, x17, x11    # x17 = B Base(x11) + offset
+        ld x19, 0(x17)       # x19 = B[k][j] (Fixed weight value)
+
+        # 3. Initialize i loop (Inner loop)
+        add x7, x0, x0       # x7 = i = 0
+
+loop_i:
+        beq x7, x13, end_i   # If i == M (x13), terminate i loop
+
+        # ----------------------------------------------------
+        # [Load Matrix A] Calculate address and read A[i][k]
+        # Index formula for A: (i * K + k) * 8
+        # ----------------------------------------------------
+        mul x16, x7, x15     # x16 = i * K
+        add x16, x16, x5     # x16 = i * K + k
+        slli x16, x16, 3     # x16 = (i * K + k) * 8
+        add x16, x16, x10    # x16 = A Base(x10) + offset
+        ld x20, 0(x16)       # x20 = A[i][k]
+
+        # ----------------------------------------------------
+        # [Load Matrix C] Read the existing value (Partial Sum) of C[i][j]
+        # Index formula for C: (i * N + j) * 8
+        # ----------------------------------------------------
+        mul x18, x7, x14     # x18 = i * N
+        add x18, x18, x6     # x18 = i * N + j
+        slli x18, x18, 3     # x18 = (i * N + j) * 8
+        add x18, x18, x12    # x18 = C Base(x12) + offset
+        ld x21, 0(x18)       # x21 = C[i][j]
+
+        # ----------------------------------------------------
+        # [Compute and Update] C[i][j] += A[i][k] * B[k][j]
+        # ----------------------------------------------------
+        mul x22, x20, x19    # x22 = A[i][k] * B[k][j]
+        add x21, x21, x22    # x21 = C[i][j] + x22
+        sd x21, 0(x18)       # Store the computed value back to memory C[i][j]
+
+        # Increment i loop counter and repeat
+        addi x7, x7, 1       # i = i + 1
+        beq x0, x0, loop_i   # Unconditional jump (Alternative to pseudo-instruction j)
+
+end_i:
+        # Increment j loop counter and repeat
+        addi x6, x6, 1       # j = j + 1
+        beq x0, x0, loop_j   # Unconditional jump
+
+end_j:
+        # Increment k loop counter and repeat
+        addi x5, x5, 1       # k = k + 1
+        beq x0, x0, loop_k   # Unconditional jump
+
+end_k:
+        # The program terminates naturally when the PC goes out of the valid code segment[cite: 62].

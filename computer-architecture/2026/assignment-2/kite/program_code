@@ -1,0 +1,174 @@
+gemm:
+    # Open a local stack frame and back up the registers that must survive nested calls.
+    addi x2, x2, -112
+    sd x1, 104(x2)
+    sd x8, 96(x2)
+    sd x18, 88(x2)
+    sd x19, 80(x2)
+    sd x20, 72(x2)
+    sd x21, 64(x2)
+    sd x22, 56(x2)
+    sd x23, 48(x2)
+    sd x24, 40(x2)
+    sd x25, 32(x2)
+    sd x26, 24(x2)
+    sd x27, 16(x2)
+    addi x8, x2, 112
+
+    # Keep the original GEMM inputs in saved registers so arg registers can be reused for mma.
+    add x18, x10, x0      # base of A
+    add x19, x11, x0      # base of B
+    add x20, x12, x0      # base of C
+    add x21, x13, x0      # tile size m
+    add x22, x14, x0      # tile size n
+    add x23, x15, x0      # tile size k
+    add x24, x16, x0      # full size M
+    add x25, x17, x0      # full size N
+    add x26, x28, x0      # full size K
+
+    # Outer tile sweep over output columns.
+    addi x27, x0, 0
+
+gemm_y_cond:
+    bge x27, x25, gemm_done
+
+    # Middle tile sweep over the reduction dimension.
+    addi x29, x0, 0
+    sd x29, 8(x2)
+
+gemm_z_cond:
+    ld x29, 8(x2)
+    bge x29, x26, gemm_next_y
+
+    # Inner tile sweep over output rows.
+    addi x30, x0, 0
+    sd x30, 0(x2)
+
+gemm_x_cond:
+    ld x30, 0(x2)
+    ld x29, 8(x2)
+    bge x30, x24, gemm_next_z
+
+    # Locate the first element of the current A tile block.
+    mul x3, x30, x26
+    add x3, x3, x29
+    slli x3, x3, 3
+    add x10, x18, x3
+
+    # Locate the matching B tile block.
+    mul x4, x29, x25
+    add x4, x4, x27
+    slli x4, x4, 3
+    add x11, x19, x4
+
+    # Locate the C tile that will receive the partial sum.
+    mul x5, x30, x25
+    add x5, x5, x27
+    slli x5, x5, 3
+    add x12, x20, x5
+
+    # Rebuild the full mma argument list in calling-convention registers.
+    add x13, x21, x0
+    add x14, x22, x0
+    add x15, x23, x0
+    add x16, x24, x0
+    add x17, x25, x0
+    add x28, x26, x0
+
+    # Process one tile pair and accumulate the result into the selected C tile.
+    jal x1, mma
+
+    # Advance to the next row tile.
+    ld x30, 0(x2)
+    add x30, x30, x21
+    sd x30, 0(x2)
+    jal x0, gemm_x_cond
+
+gemm_next_z:
+    # Advance to the next depth tile.
+    ld x29, 8(x2)
+    add x29, x29, x23
+    sd x29, 8(x2)
+    jal x0, gemm_z_cond
+
+gemm_next_y:
+    # Advance to the next column tile.
+    add x27, x27, x22
+    jal x0, gemm_y_cond
+
+gemm_done:
+    # Recover the caller-visible state and leave gemm.
+    ld x27, 16(x2)
+    ld x26, 24(x2)
+    ld x25, 32(x2)
+    ld x24, 40(x2)
+    ld x23, 48(x2)
+    ld x22, 56(x2)
+    ld x21, 64(x2)
+    ld x20, 72(x2)
+    ld x19, 80(x2)
+    ld x18, 88(x2)
+    ld x8, 96(x2)
+    ld x1, 104(x2)
+    addi x2, x2, 112
+    jalr x0, 0(x1)
+
+mma:
+    # Inside one tile, iterate in y-z-x order and reuse one B element across x.
+    # Scan tile columns first.
+    addi x29, x0, 0
+
+mma_y_cond:
+    bge x29, x14, mma_done
+
+    # Then move along the tile depth.
+    addi x30, x0, 0
+
+mma_z_cond:
+    bge x30, x15, mma_next_y
+
+    # Read one B value and keep reusing it while x changes.
+    mul x3, x30, x17
+    add x3, x3, x29
+    slli x3, x3, 3
+    add x4, x11, x3
+    ld x5, 0(x4)
+
+    # Sweep tile rows for the current (z, y) pair.
+    addi x31, x0, 0
+
+mma_x_cond:
+    bge x31, x13, mma_next_z
+
+    # Address of the A element that matches the current row/depth position.
+    mul x3, x31, x28
+    add x3, x3, x30
+    slli x3, x3, 3
+    add x4, x10, x3
+    ld x6, 0(x4)
+
+    # Address of the C element that receives the accumulated value.
+    mul x3, x31, x17
+    add x3, x3, x29
+    slli x3, x3, 3
+    add x4, x12, x3
+    ld x7, 0(x4)
+
+    # One scalar multiply-accumulate step for the current tile entry.
+    mul x6, x6, x5
+    add x7, x7, x6
+    sd x7, 0(x4)
+
+    addi x31, x31, 1
+    jal x0, mma_x_cond
+
+mma_next_z:
+    addi x30, x30, 1
+    jal x0, mma_z_cond
+
+mma_next_y:
+    addi x29, x29, 1
+    jal x0, mma_y_cond
+
+mma_done:
+    jalr x0, 0(x1)
